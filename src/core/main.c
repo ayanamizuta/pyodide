@@ -10,6 +10,7 @@
 #include "js2python.h"
 #include "jsproxy.h"
 #include "keyboard_interrupt.h"
+#include "pylifecycle.h" // PyInterpreterState_New(), PyThreadState_New()
 #include "pyproxy.h"
 #include "python2js.h"
 #include "python2js_buffer.h"
@@ -78,6 +79,19 @@ static struct PyModuleDef core_module_def = {
 
 PyObject* init_dict;
 
+// from numpy_patch.c (no need for a header just for this)
+int
+numpy_patch_init();
+
+int
+get_python_stack_depth()
+{
+  PyThreadState* tstate = PyThreadState_GET();
+  return tstate->recursion_depth;
+}
+
+int init_flag=0;
+
 /**
  * The C code for runPythonSimple. The definition of runPythonSimple is in
  * `pyodide.js` for greater visibility.
@@ -88,17 +102,6 @@ run_python_simple_inner(char* code)
   PyObject* result = PyRun_String(code, Py_file_input, init_dict, init_dict);
   Py_XDECREF(result);
   return result ? 0 : -1;
-}
-
-// from numpy_patch.c (no need for a header just for this)
-int
-numpy_patch_init();
-
-int
-get_python_stack_depth()
-{
-  PyThreadState* tstate = PyThreadState_GET();
-  return tstate->recursion_depth;
 }
 
 /**
