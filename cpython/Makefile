@@ -95,6 +95,7 @@ $(INSTALL)/lib/libsqlite3.a: $(SQLITETARBALL)
 	# sqlite fails to detect that popen is not available. We have to set it
 	# as a CPPFLAG
 	( \
+	  cat patches-sqlite/*.patch | (cd $(SQLITEBUILD) ; patch -p1); \
 		cd $(SQLITEBUILD); \
 		emconfigure ./configure CFLAGS="$(PYTHON_CFLAGS)" CPPFLAGS="-DSQLITE_OMIT_POPEN"; \
 		emmake make -j $${PYODIDE_JOBS:-3}; \
