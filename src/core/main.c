@@ -99,6 +99,77 @@ int init_flag=0;
 int
 run_python_simple_inner(char* code)
 {
+  if(!init_flag){// TODO: avoid kludge
+    // This exits and prints a message to stderr on failure,
+    // no status code to check.
+    initialize_python();
+
+    // Once we initialize init_dict, runPythonSimple can work. This gives us a way
+    // to run Python code that works even if the rest of the initialization fails
+    // pretty badly.
+    init_dict = PyDict_New();
+    if (init_dict == NULL) {
+      FATAL_ERROR("Failed to create init_dict.");
+    }
+
+    if (alignof(JsRef) != alignof(int)) {
+      FATAL_ERROR("JsRef doesn't have the same alignment as int.");
+    }
+    if (sizeof(JsRef) != sizeof(int)) {
+      FATAL_ERROR("JsRef doesn't have the same size as int.");
+    }
+
+    PyObject* _pyodide = NULL;
+    PyObject* core_module = NULL;
+    JsRef init_dict_proxy = NULL;
+
+    _pyodide = PyImport_ImportModule("_pyodide");
+    if (_pyodide == NULL) {
+      FATAL_ERROR("Failed to import _pyodide module");
+    }
+
+    core_module = PyModule_Create(&core_module_def);
+    if (core_module == NULL) {
+      FATAL_ERROR("Failed to create core module.");
+    }
+
+    EM_ASM({
+      // For some reason emscripten doesn't make UTF8ToString available on Module
+      // by default...
+      Module.UTF8ToString = UTF8ToString;
+      Module.wasmTable = wasmTable;
+    });
+
+    TRY_INIT_WITH_CORE_MODULE(error_handling);
+    TRY_INIT(hiwire);
+    TRY_INIT(docstring);
+    TRY_INIT(numpy_patch);
+    TRY_INIT(js2python);
+    TRY_INIT_WITH_CORE_MODULE(python2js);
+    TRY_INIT(python2js_buffer);
+    TRY_INIT_WITH_CORE_MODULE(JsProxy);
+    TRY_INIT_WITH_CORE_MODULE(pyproxy);
+    TRY_INIT(keyboard_interrupt);
+
+    PyObject* module_dict = PyImport_GetModuleDict(); /* borrowed */
+    if (PyDict_SetItemString(module_dict, "_pyodide_core", core_module)) {
+      FATAL_ERROR("Failed to add '_pyodide_core' module to modules dict.");
+    }
+
+    // Enable Javascript access to the globals from runPythonSimple.
+    init_dict_proxy = python2js(init_dict);
+    if (init_dict_proxy == NULL) {
+      FATAL_ERROR("Failed to create init_dict proxy.");
+    }
+    EM_ASM({ Module.init_dict = Module.hiwire.pop_value($0); }, init_dict_proxy);
+
+    Py_CLEAR(_pyodide);
+    Py_CLEAR(core_module);
+    hiwire_CLEAR(init_dict_proxy);
+
+    init_flag=1;
+    emscripten_exit_with_live_runtime();
+  }
   PyObject* result = PyRun_String(code, Py_file_input, init_dict, init_dict);
   Py_XDECREF(result);
   return result ? 0 : -1;
